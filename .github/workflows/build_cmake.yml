@@ -1,0 +1,239 @@
+name: CMake Build Matrix
+# 参考 https://github.com/cristianadam/HelloWorld/
+# https://cristianadam.eu/20191222/using-github-actions-with-c-plus-plus-and-cmake/
+
+on: [push, pull_request]
+
+# 虽然不同操作系统都自带了cmake，但是为了灵活定义版本，我们自己下载cmake
+env:
+  CMAKE_VERSION: 3.16.2
+  NINJA_VERSION: 1.9.0
+  BUILD_TYPE: Release
+  CCACHE_VERSION: 3.7.7
+
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+        - {
+            name: "Windows Latest MSVC", artifact: "Windows-MSVC.tar.xz",
+            os: windows-latest,
+            cc: "cl", cxx: "cl",
+            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
+          }
+        - {
+            name: "Windows Latest MSVC Win32", artifact: "Windows-MSVC-Win32.tar.xz",
+            os: windows-latest,
+            cc: "cl", cxx: "cl",
+            environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars32.bat"
+          }
+        - {
+            name: "Ubuntu Latest GCC", artifact: "Linux.tar.xz",
+            os: ubuntu-latest,
+            cc: "gcc", cxx: "g++"
+          }
+        - {
+            name: "macOS Latest Clang", artifact: "macOS.tar.xz",
+            os: macos-latest,
+            cc: "clang", cxx: "clang++"
+          }
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Download Ninja and CMake
+      id: cmake_and_ninja
+      # 不同操作系统shell不一样，统一使用cmake的命令行
+      shell: cmake -P {0}
+      run: |
+        # 以下都是cmake命令
+        # https://cmake.org/cmake/help/v3.7/manual/cmake-language.7.html
+        set(cmake_version $ENV{CMAKE_VERSION})
+        set(ninja_version $ENV{NINJA_VERSION})
+
+        message(STATUS "Using host CMake version: ${CMAKE_VERSION}")
+        # 定义cmake&ninja url后缀名，方便下载
+        if ("${{ runner.os }}" STREQUAL "Windows")
+          set(ninja_suffix "win.zip")
+          set(cmake_suffix "win64-x64.zip")
+          set(cmake_dir "cmake-${cmake_version}-win64-x64/bin")
+        elseif ("${{ runner.os }}" STREQUAL "Linux")
+          set(ninja_suffix "linux.zip")
+          set(cmake_suffix "Linux-x86_64.tar.gz")
+          set(cmake_dir "cmake-${cmake_version}-Linux-x86_64/bin")
+        elseif ("${{ runner.os }}" STREQUAL "macOS")
+          set(ninja_suffix "mac.zip")
+          set(cmake_suffix "Darwin-x86_64.tar.gz")
+          set(cmake_dir "cmake-${cmake_version}-Darwin-x86_64/CMake.app/Contents/bin")
+        endif()
+
+        set(ninja_url "https://github.com/ninja-build/ninja/releases/download/v${ninja_version}/ninja-${ninja_suffix}")
+        file(DOWNLOAD "${ninja_url}" ./ninja.zip SHOW_PROGRESS)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar xvf ./ninja.zip)
+
+        set(cmake_url "https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}-${cmake_suffix}")
+        file(DOWNLOAD "${cmake_url}" ./cmake.zip SHOW_PROGRESS)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar xvf ./cmake.zip)
+
+        # cmake路径传递给下面步骤使用
+        file(TO_CMAKE_PATH "$ENV{GITHUB_WORKSPACE}/${cmake_dir}" cmake_dir)
+        message("::set-output name=cmake_dir::${cmake_dir}")
+
+        if (NOT "${{ runner.os }}" STREQUAL "Windows")
+          execute_process(
+            COMMAND chmod +x ninja
+            COMMAND chmod +x ${cmake_dir}/cmake
+          )
+        endif()
+    
+    # https://wiki.archlinux.org/index.php/Ccache_(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87)
+    - name: Download ccache
+      id: ccache
+      shell: cmake -P {0}
+      run: |
+        set(ccache_url "https://github.com/cristianadam/ccache/releases/download/v$ENV{CCACHE_VERSION}/${{ runner.os }}.tar.xz")
+        file(DOWNLOAD "${ccache_url}" ./ccache.tar.xz SHOW_PROGRESS)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E tar xvf ./ccache.tar.xz)
+
+    - name: Prepare ccache timestamp
+      id: ccache_cache_timestamp
+      shell: cmake -P {0}
+      run: |
+        string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
+        message("::set-output name=timestamp::${current_date}")
+
+    # https://help.github.com/en/actions/configuring-and-managing-workflows/caching-dependencies-to-speed-up-workflows
+    - name: ccache cache files
+      uses: actions/cache@v1.1.0
+      with:
+        path: .ccache
+        key: ${{ matrix.config.name }}-ccache-${{ steps.ccache_cache_timestamp.outputs.timestamp }}
+        restore-keys: |
+          ${{ matrix.config.name }}-ccache-
+
+    - name: Configure
+      shell: cmake -P {0}
+      run: |
+        set(ENV{CC} ${{ matrix.config.cc }})
+        set(ENV{CXX} ${{ matrix.config.cxx }})
+
+        if ("${{ runner.os }}" STREQUAL "Windows" AND NOT "x${{ matrix.config.environment_script }}" STREQUAL "x")
+          execute_process(
+            COMMAND "${{ matrix.config.environment_script }}" && set
+            OUTPUT_FILE environment_script_output.txt
+          )
+          file(STRINGS environment_script_output.txt output_lines)
+          foreach(line IN LISTS output_lines)
+            if (line MATCHES "^([a-zA-Z0-9_-]+)=(.*)$")
+              set(ENV{${CMAKE_MATCH_1}} "${CMAKE_MATCH_2}")
+              # message(STATUS "CMAKE_MATCH_1:${CMAKE_MATCH_1}, CMAKE_MATCH_2:${CMAKE_MATCH_2}")
+            endif()
+          endforeach()
+        endif()
+
+        # 加入环境变量
+        set(path_separator ":")
+        if ("${{ runner.os }}" STREQUAL "Windows")
+          set(path_separator ";")
+        endif()
+        set(ENV{PATH} "$ENV{GITHUB_WORKSPACE}${path_separator}$ENV{PATH}")
+
+        # 执行cmake
+        execute_process(
+          COMMAND ${{ steps.cmake_and_ninja.outputs.cmake_dir }}/cmake
+            -S .
+            -B build
+            -D CMAKE_BUILD_TYPE=$ENV{BUILD_TYPE}
+            -G Ninja
+            -D CMAKE_MAKE_PROGRAM=ninja
+            -D CMAKE_C_COMPILER_LAUNCHER=ccache
+            -D CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          RESULT_VARIABLE result
+        )
+        if (NOT result EQUAL 0)
+          message(FATAL_ERROR "Bad exit status")
+        endif()
+
+
+    - name: Build
+      shell: cmake -P {0}
+      run: |
+        set(ENV{NINJA_STATUS} "[%f/%t %o/sec] ")
+
+        if ("${{ runner.os }}" STREQUAL "Windows" AND NOT "x${{ matrix.config.environment_script }}" STREQUAL "x")
+          file(STRINGS environment_script_output.txt output_lines)
+          foreach(line IN LISTS output_lines)
+            if (line MATCHES "^([a-zA-Z0-9_-]+)=(.*)$")
+              set(ENV{${CMAKE_MATCH_1}} "${CMAKE_MATCH_2}")
+              # message(STATUS "CMAKE_MATCH_1:${CMAKE_MATCH_1}, CMAKE_MATCH_2:${CMAKE_MATCH_2}")
+            endif()
+          endforeach()
+        endif()
+
+        set(path_separator ":")
+        if ("${{ runner.os }}" STREQUAL "Windows")
+          set(path_separator ";")
+        endif()
+        set(ENV{PATH} "$ENV{GITHUB_WORKSPACE}${path_separator}$ENV{PATH}")
+        
+        # 配置ccache
+        file(TO_CMAKE_PATH "$ENV{GITHUB_WORKSPACE}${path_separator}ccache" ccache_basedir)
+        set(ENV{CCACHE_BASEDIR} "${ccache_basedir}")
+        set(ENV{CCACHE_DIR} "${ccache_basedir}/.ccache")
+        set(ENV{CCACHE_COMPRESS} "true")
+        set(ENV{CCACHE_COMPRESSLEVEL} "6")
+        set(ENV{CCACHE_MAXSIZE} "400M")
+        if ("${{ matrix.config.cxx }}" STREQUAL "cl")
+          set(ENV{CCACHE_MAXSIZE} "600M")
+        endif()
+
+        execute_process(COMMAND ccache -p)
+        execute_process(COMMAND ccache -z)
+
+        # 执行编译
+        execute_process(
+          COMMAND ${{ steps.cmake_and_ninja.outputs.cmake_dir }}/cmake --build build
+          RESULT_VARIABLE result
+        )
+        if (NOT result EQUAL 0)
+          message(FATAL_ERROR "Bad exit status")
+        endif()
+
+        execute_process(COMMAND ccache -s)
+
+    - name: Run tests
+      shell: cmake -P {0}
+      run: |
+        include(ProcessorCount)
+        ProcessorCount(N)
+
+        set(ENV{CTEST_OUTPUT_ON_FAILURE} "ON")
+
+        execute_process(
+          COMMAND ${{ steps.cmake_and_ninja.outputs.cmake_dir }}/ctest -j ${N}
+          WORKING_DIRECTORY build
+          RESULT_VARIABLE result
+        )
+        if (NOT result EQUAL 0)
+          message(FATAL_ERROR "Running tests failed!")
+        endif()
+    
+    # 编译产物安装到instdir目录
+    - name: Install Strip
+      run: ${{ steps.cmake_and_ninja.outputs.cmake_dir }}/cmake --install build --prefix instdir --strip
+      
+    # 打包instdir目录
+    - name: Pack
+      working-directory: instdir
+      run: ${{ steps.cmake_and_ninja.outputs.cmake_dir }}/cmake -E tar cJfv ../${{ matrix.config.artifact }} .
+
+    # 上传
+    - name: Upload
+      uses: actions/upload-artifact@v1
+      with:
+        path: ./${{ matrix.config.artifact }}
+        name: ${{ matrix.config.artifact }}
