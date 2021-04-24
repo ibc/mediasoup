@@ -36,6 +36,7 @@
 /worker/**/Debug/
 /worker/**/Release/
 /worker/.vs/
+build
 
 # Vistual Studio Code stuff.
 /.vscode/
