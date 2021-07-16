@@ -700,9 +700,27 @@ namespace RTC
 			uint32_t tsOffset{ 0u };
 
 			// Sync our RTP stream's RTP timestamp.
-			if (spatialLayer == this->tsReferenceSpatialLayer)
+			if (-1 == this->tsReferenceSpatialLayer)
 			{
-				tsOffset = 0u;
+				if (shouldSwitchCurrentSpatialLayer)
+				{
+					// If we're actually switching streams, push the RTP timestamp up (we don't have a way to
+					// offset based on abs time yet) otherwise, if it's the first packet, we can just keep the
+					// timestamps
+					if (this->rtpStream->GetMaxPacketTs())
+						tsOffset = packet->GetTimestamp() - this->rtpStream->GetMaxPacketTs() -
+						           33 * this->rtpStream->GetClockRate() / 1000;
+					else
+						tsOffset = 0u;
+				}
+				else
+				{
+					tsOffset = this->tsOffset; // status quo
+				}
+			}
+			else if (spatialLayer == this->tsReferenceSpatialLayer)
+			{
+				tsOffset = this->tsReferenceOffset;
 			}
 			// If this is not the RTP stream we use as TS reference, do NTP based RTP TS synchronization.
 			else
@@ -719,23 +737,18 @@ namespace RTC
 				  producerTargetRtpStream->GetSenderReportNtpMs(), "no Sender Report for current RTP stream");
 
 				// Calculate NTP and TS stuff.
-				auto ntpMs1 = producerTsReferenceRtpStream->GetSenderReportNtpMs();
-				auto ts1    = producerTsReferenceRtpStream->GetSenderReportTs();
-				auto ntpMs2 = producerTargetRtpStream->GetSenderReportNtpMs();
-				auto ts2    = producerTargetRtpStream->GetSenderReportTs();
-				int64_t diffMs;
-
-				if (ntpMs2 >= ntpMs1)
-					diffMs = ntpMs2 - ntpMs1;
-				else
-					diffMs = -1 * (ntpMs1 - ntpMs2);
+				auto ntpMs1    = producerTsReferenceRtpStream->GetSenderReportNtpMs();
+				auto ts1       = producerTsReferenceRtpStream->GetSenderReportTs();
+				auto ntpMs2    = producerTargetRtpStream->GetSenderReportNtpMs();
+				auto ts2       = producerTargetRtpStream->GetSenderReportTs();
+				int64_t diffMs = ntpMs2 - ntpMs1;
 
 				int64_t diffTs  = diffMs * this->rtpStream->GetClockRate() / 1000;
 				uint32_t newTs2 = ts2 - diffTs;
 
 				// Apply offset. This is the difference that later must be removed from the
 				// sending RTP packet.
-				tsOffset = newTs2 - ts1;
+				tsOffset = this->tsReferenceOffset + newTs2 - ts1;
 			}
 
 			// When switching to a new stream it may happen that the timestamp of this
@@ -812,6 +825,10 @@ namespace RTC
 
 			this->tsOffset = tsOffset;
 
+			// We need this update here and below, it picks up and carries forward any adjustments we made above
+			if (spatialLayer == this->tsReferenceSpatialLayer)
+				this->tsReferenceOffset = this->tsOffset;
+
 			// Sync our RTP stream's sequence number.
 			this->rtpSeqManager.Sync(packet->GetSequenceNumber() - 1);
 
@@ -825,6 +842,9 @@ namespace RTC
 		{
 			// Update current spatial layer.
 			this->currentSpatialLayer = this->targetSpatialLayer;
+
+			if (this->currentSpatialLayer == this->tsReferenceSpatialLayer)
+				this->tsReferenceOffset = this->tsOffset;
 
 			// Update target and current temporal layer.
 			this->encodingContext->SetTargetTemporalLayer(this->targetTemporalLayer);
@@ -856,6 +876,16 @@ namespace RTC
 
 			if (previousTemporalLayer != this->encodingContext->GetCurrentTemporalLayer())
 				EmitLayersChange();
+		}
+
+		if (-1 == this->tsReferenceSpatialLayer && this->currentSpatialLayer == this->targetSpatialLayer)
+		{
+			auto* producerCurrentRtpStream = GetProducerCurrentRtpStream();
+			if (producerCurrentRtpStream && producerCurrentRtpStream->GetSenderReportNtpMs())
+			{
+				this->tsReferenceSpatialLayer = this->currentSpatialLayer;
+				this->tsReferenceOffset       = this->tsOffset;
+			}
 		}
 
 		// Update RTP seq number and timestamp based on NTP offset.
@@ -1327,15 +1357,6 @@ namespace RTC
 	void SimulcastConsumer::UpdateTargetLayers(int16_t newTargetSpatialLayer, int16_t newTargetTemporalLayer)
 	{
 		MS_TRACE();
-
-		// If we don't have yet a RTP timestamp reference, set it now.
-		if (newTargetSpatialLayer != -1 && this->tsReferenceSpatialLayer == -1)
-		{
-			MS_DEBUG_TAG(
-			  simulcast, "using spatial layer %" PRIi16 " as RTP timestamp reference", newTargetSpatialLayer);
-
-			this->tsReferenceSpatialLayer = newTargetSpatialLayer;
-		}
 
 		if (newTargetSpatialLayer == -1)
 		{
