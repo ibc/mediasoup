@@ -86,9 +86,10 @@ namespace RTC
 				  "ignoring older packet not present in the NACK list [ssrc:%" PRIu32 ", seq:%" PRIu16 "]",
 				  packet->GetSsrc(),
 				  packet->GetSequenceNumber());
+				return false;
 			}
 
-			return false;
+			return true;
 		}
 
 		// If we are here it means that we may have lost some packets so seq is
@@ -117,7 +118,7 @@ namespace RTC
 
 			// Do not let a packet pass if it's newer than last seen seq and came via
 			// RTX.
-			return false;
+			return true;
 		}
 
 		AddPacketsToNackList(this->lastSeq + 1, seq);
