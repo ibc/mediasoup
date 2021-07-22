@@ -23,6 +23,10 @@ export declare type WorkerSettings = {
      */
     rtcMaxPort?: number;
     /**
+     * Delay ms before sending RTCP NACK. Default 0.
+     */
+    sendNackDelayMs?: number;
+    /**
      * Path to the DTLS public certificate file in PEM format. If unset, a
      * certificate is dynamically created.
      */
@@ -125,7 +129,7 @@ export declare class Worker extends EnhancedEventEmitter {
      * @emits @success
      * @emits @failure - (error: Error)
      */
-    constructor({ logLevel, logTags, rtcMinPort, rtcMaxPort, dtlsCertificateFile, dtlsPrivateKeyFile, appData }: WorkerSettings);
+    constructor({ logLevel, logTags, rtcMinPort, rtcMaxPort, sendNackDelayMs, dtlsCertificateFile, dtlsPrivateKeyFile, appData }: WorkerSettings);
     /**
      * Worker process identifier (PID).
      */

@@ -28,7 +28,8 @@ namespace RTC
 		struct NackInfo
 		{
 			NackInfo() = default;
-			explicit NackInfo(uint16_t seq, uint16_t sendAtSeq) : seq(seq), sendAtSeq(sendAtSeq)
+			explicit NackInfo(uint16_t seq, uint16_t sendAtSeq, uint64_t createAtMs)
+			  : seq(seq), sendAtSeq(sendAtSeq), createAtMs(createAtMs)
 			{
 			}
 
@@ -36,6 +37,7 @@ namespace RTC
 			uint16_t sendAtSeq{ 0u };
 			uint64_t sentAtMs{ 0u };
 			uint8_t retries{ 0u };
+			uint64_t createAtMs{ 0u };
 		};
 
 		enum class NackFilter
@@ -45,7 +47,7 @@ namespace RTC
 		};
 
 	public:
-		explicit NackGenerator(Listener* listener);
+		explicit NackGenerator(Listener* listener, uint64_t sendNackDelayMs = 0u);
 		~NackGenerator() override;
 
 		bool ReceivePacket(RTC::RtpPacket* packet, bool isRecovered);
@@ -81,6 +83,7 @@ namespace RTC
 		bool started{ false };
 		uint16_t lastSeq{ 0u }; // Seq number of last valid packet.
 		uint32_t rtt{ 0u };     // Round trip time (ms).
+		uint64_t sendNackDelayMs{ 0u };
 	};
 } // namespace RTC
 

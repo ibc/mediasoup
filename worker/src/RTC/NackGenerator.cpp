@@ -20,7 +20,8 @@ namespace RTC
 
 	/* Instance methods. */
 
-	NackGenerator::NackGenerator(Listener* listener) : listener(listener), rtt(DefaultRtt)
+	NackGenerator::NackGenerator(Listener* listener, uint64_t sendNackDelayMs)
+	  : listener(listener), rtt(DefaultRtt), sendNackDelayMs(sendNackDelayMs)
 	{
 		MS_TRACE();
 
@@ -76,7 +77,10 @@ namespace RTC
 
 				this->nackList.erase(it);
 
-				return true;
+				if (it->second.retries != 0)
+					return true;
+				else
+					return false;
 			}
 
 			// Out of order packet or already handled NACKed packet.
@@ -183,7 +187,7 @@ namespace RTC
 			if (this->recoveredList.find(seq) != this->recoveredList.end())
 				continue;
 
-			this->nackList.emplace(std::make_pair(seq, NackInfo{ seq, seq }));
+			this->nackList.emplace(std::make_pair(seq, NackInfo{ seq, seq, DepLibUV::GetTimeMs() }));
 		}
 	}
 
@@ -226,6 +230,11 @@ namespace RTC
 			NackInfo& nackInfo = it->second;
 			uint16_t seq       = nackInfo.seq;
 
+			if (nowMs - nackInfo.createAtMs < this->sendNackDelayMs)
+			{
+				++it;
+				continue;
+			}
 			// clang-format off
 			if (
 				filter == NackFilter::SEQ &&
@@ -259,7 +268,7 @@ namespace RTC
 				continue;
 			}
 
-			if (filter == NackFilter::TIME && nowMs - nackInfo.sentAtMs >= this->rtt)
+			if (filter == NackFilter::TIME && (nackInfo.sentAtMs == 0 || nowMs - nackInfo.sentAtMs >= this->rtt))
 			{
 				nackBatch.emplace_back(seq);
 				nackInfo.retries++;

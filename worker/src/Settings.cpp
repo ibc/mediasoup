@@ -59,6 +59,7 @@ void Settings::SetConfiguration(int argc, char* argv[])
 		{ "rtcMaxPort",          optional_argument, nullptr, 'M' },
 		{ "dtlsCertificateFile", optional_argument, nullptr, 'c' },
 		{ "dtlsPrivateKeyFile",  optional_argument, nullptr, 'p' },
+		{ "sendNackDelayMs",     optional_argument, nullptr, 'n' },
 		{ nullptr, 0, nullptr, 0 }
 	};
 	// clang-format on
@@ -135,7 +136,19 @@ void Settings::SetConfiguration(int argc, char* argv[])
 			{
 				stringValue                                = std::string(optarg);
 				Settings::configuration.dtlsPrivateKeyFile = stringValue;
+				break;
+			}
 
+			case 'n':
+			{
+				try
+				{
+					Settings::configuration.sendNackDelayMs = std::stoull(optarg);
+				}
+				catch (const std::exception& error)
+				{
+					MS_THROW_TYPE_ERROR("%s", error.what());
+				}
 				break;
 			}
 

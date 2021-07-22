@@ -36,6 +36,7 @@ public:
 		struct LogTags logTags;
 		uint16_t rtcMinPort{ 10000u };
 		uint16_t rtcMaxPort{ 59999u };
+		uint64_t sendNackDelayMs{ 0u };
 		std::string dtlsCertificateFile;
 		std::string dtlsPrivateKeyFile;
 	};

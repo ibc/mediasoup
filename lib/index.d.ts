@@ -24,7 +24,7 @@ export { observer };
 /**
  * Create a Worker.
  */
-export declare function createWorker({ logLevel, logTags, rtcMinPort, rtcMaxPort, dtlsCertificateFile, dtlsPrivateKeyFile, appData }?: WorkerSettings): Promise<Worker>;
+export declare function createWorker({ logLevel, logTags, rtcMinPort, rtcMaxPort, sendNackDelayMs, dtlsCertificateFile, dtlsPrivateKeyFile, appData }?: WorkerSettings): Promise<Worker>;
 /**
  * Get a cloned copy of the mediasoup supported RTP capabilities.
  */

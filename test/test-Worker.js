@@ -36,6 +36,7 @@ test('createWorker() succeeds', async () =>
 			logTags             : [ 'info' ],
 			rtcMinPort          : 0,
 			rtcMaxPort          : 9999,
+			sendNackDelayMs     : 0,
 			dtlsCertificateFile : 'test/data/dtls-cert.pem',
 			dtlsPrivateKeyFile  : 'test/data/dtls-key.pem',
 			appData             : { bar: 456 }
