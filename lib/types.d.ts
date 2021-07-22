@@ -10,6 +10,7 @@ export * from './Consumer';
 export * from './DataProducer';
 export * from './DataConsumer';
 export * from './RtpObserver';
+export * from './ActiveSpeakerObserver';
 export * from './AudioLevelObserver';
 export * from './RtpParameters';
 export * from './SctpParameters';

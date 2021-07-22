@@ -10,6 +10,7 @@ import { Producer } from './Producer';
 import { Consumer } from './Consumer';
 import { DataProducer } from './DataProducer';
 import { DataConsumer } from './DataConsumer';
+import { ActiveSpeakerObserver, ActiveSpeakerObserverOptions } from './ActiveSpeakerObserver';
 import { AudioLevelObserver, AudioLevelObserverOptions } from './AudioLevelObserver';
 import { RtpCapabilities, RtpCodecCapability } from './RtpParameters';
 import { NumSctpStreams } from './SctpParameters';
@@ -167,6 +168,10 @@ export declare class Router extends EnhancedEventEmitter {
      * Pipes the given Producer or DataProducer into another Router in same host.
      */
     pipeToRouter({ producerId, dataProducerId, router, listenIp, enableSctp, numSctpStreams, enableRtx, enableSrtp }: PipeToRouterOptions): Promise<PipeToRouterResult>;
+    /**
+     * Create an ActiveSpeakerObserver
+     */
+    createActiveSpeakerObserver({ interval, appData }?: ActiveSpeakerObserverOptions): Promise<ActiveSpeakerObserver>;
     /**
      * Create an AudioLevelObserver.
      */

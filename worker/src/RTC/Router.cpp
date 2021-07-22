@@ -5,6 +5,7 @@
 #include "Logger.hpp"
 #include "MediaSoupErrors.hpp"
 #include "Utils.hpp"
+#include "RTC/ActiveSpeakerObserver.hpp"
 #include "RTC/AudioLevelObserver.hpp"
 #include "RTC/DirectTransport.hpp"
 #include "RTC/PipeTransport.hpp"
@@ -266,6 +267,25 @@ namespace RTC
 				directTransport->FillJson(data);
 
 				request->Accept(data);
+
+				break;
+			}
+
+			case Channel::ChannelRequest::MethodId::ROUTER_CREATE_ACTIVE_SPEAKER_OBSERVER:
+			{
+				std::string rtpObserverId;
+
+				// This may throw.
+				SetNewRtpObserverIdFromInternal(request->internal, rtpObserverId);
+
+				auto* activeSpeakerObserver = new RTC::ActiveSpeakerObserver(rtpObserverId, request->data);
+
+				// Insert into the map.
+				this->mapRtpObservers[rtpObserverId] = activeSpeakerObserver;
+
+				MS_DEBUG_DEV("ActiveSpeakerObserver created [rtpObserverId:%s]", rtpObserverId.c_str());
+
+				request->Accept();
 
 				break;
 			}

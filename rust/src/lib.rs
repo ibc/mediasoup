@@ -68,6 +68,12 @@ pub mod audio_level_observer {
     pub use crate::router::audio_level_observer::*;
 }
 
+pub mod active_speaker_observer {
+    //! An active speaker observer monitors the speaking activity of the selected audio producers.
+
+    pub use crate::router::active_speaker_observer::*;
+}
+
 pub mod consumer {
     //! A consumer represents an audio or video source being forwarded from a mediasoup router to an
     //! endpoint. It's created on top of a transport that defines how the media packets are carried.

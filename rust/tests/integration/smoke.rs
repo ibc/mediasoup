@@ -1,4 +1,5 @@
 use futures_lite::future;
+use mediasoup::active_speaker_observer::ActiveSpeakerObserverOptions;
 use mediasoup::audio_level_observer::AudioLevelObserverOptions;
 use mediasoup::consumer::{ConsumerLayers, ConsumerOptions, ConsumerTraceEventType};
 use mediasoup::data_consumer::DataConsumerOptions;
@@ -326,6 +327,24 @@ fn smoke() {
                 .await
                 .unwrap()
         );
+
+        let active_speaker_observer = router
+            .create_active_speaker_observer(ActiveSpeakerObserverOptions::default())
+            .await
+            .unwrap();
+
+        println!(
+            "Active speaker observer: {:#?}",
+            active_speaker_observer.id()
+        );
+        println!(
+            "Add producer to active speaker observer: {:#?}",
+            active_speaker_observer
+                .add_producer(RtpObserverAddProducerOptions::new(producer.id()))
+                .await
+                .unwrap()
+        );
+
         println!("Router dump: {:#?}", router.dump().await.unwrap());
         println!(
             "Remove producer from audio level observer: {:#?}",

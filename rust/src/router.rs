@@ -6,6 +6,7 @@
 //! high level use cases (for instance, a "multi-party conference room" could involve various
 //! mediasoup routers, even in different physicals hosts).
 
+pub(super) mod active_speaker_observer;
 pub(super) mod audio_level_observer;
 pub(super) mod consumer;
 pub(super) mod data_consumer;
@@ -20,6 +21,7 @@ mod tests;
 pub(super) mod transport;
 pub(super) mod webrtc_transport;
 
+use crate::active_speaker_observer::{ActiveSpeakerObserver, ActiveSpeakerObserverOptions};
 use crate::audio_level_observer::{AudioLevelObserver, AudioLevelObserverOptions};
 use crate::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use crate::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
@@ -29,12 +31,14 @@ use crate::data_producer::{
 use crate::data_structures::{AppData, TransportListenIp};
 use crate::direct_transport::{DirectTransport, DirectTransportOptions};
 use crate::messages::{
-    RouterCloseRequest, RouterCreateAudioLevelObserverData, RouterCreateAudioLevelObserverRequest,
-    RouterCreateDirectTransportData, RouterCreateDirectTransportRequest,
-    RouterCreatePipeTransportData, RouterCreatePipeTransportRequest,
-    RouterCreatePlainTransportData, RouterCreatePlainTransportRequest,
-    RouterCreateWebrtcTransportData, RouterCreateWebrtcTransportRequest, RouterDumpRequest,
-    RouterInternal, RtpObserverInternal, TransportInternal,
+    RouterCloseRequest, RouterCreateActiveSpeakerObserverData,
+    RouterCreateActiveSpeakerObserverRequest, RouterCreateAudioLevelObserverData,
+    RouterCreateAudioLevelObserverRequest, RouterCreateDirectTransportData,
+    RouterCreateDirectTransportRequest, RouterCreatePipeTransportData,
+    RouterCreatePipeTransportRequest, RouterCreatePlainTransportData,
+    RouterCreatePlainTransportRequest, RouterCreateWebrtcTransportData,
+    RouterCreateWebrtcTransportRequest, RouterDumpRequest, RouterInternal, RtpObserverInternal,
+    TransportInternal,
 };
 use crate::pipe_transport::{
     PipeTransport, PipeTransportOptions, PipeTransportRemoteParameters, WeakPipeTransport,
@@ -306,6 +310,8 @@ impl<'a> Deref for NewTransport<'a> {
 pub enum NewRtpObserver<'a> {
     /// Audio level observer
     AudioLevel(&'a AudioLevelObserver),
+    /// Active speaker observer
+    ActiveSpeaker(&'a ActiveSpeakerObserver),
 }
 
 impl<'a> Deref for NewRtpObserver<'a> {
@@ -314,6 +320,7 @@ impl<'a> Deref for NewRtpObserver<'a> {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::AudioLevel(observer) => *observer as &Self::Target,
+            Self::ActiveSpeaker(observer) => *observer as &Self::Target,
         }
     }
 }
@@ -826,6 +833,66 @@ impl Router {
         });
 
         Ok(audio_level_observer)
+    }
+
+    /// Create an [`ActiveSpeakerObserver`].
+    ///
+    /// Router will be kept alive as long as at least one observer instance is alive.
+    ///
+    /// # Example
+    /// ```rust
+    /// use mediasoup::active_speaker_observer::ActiveSpeakerObserverOptions;
+    ///
+    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// let observer = router
+    ///     .create_active_speaker_observer({
+    ///         let mut options = ActiveSpeakerObserverOptions::default();
+    ///         options.interval = 300;
+    ///         options
+    ///     })
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_active_speaker_observer(
+        &self,
+        active_speaker_observer_options: ActiveSpeakerObserverOptions,
+    ) -> Result<ActiveSpeakerObserver, RequestError> {
+        debug!("create_active_speaker_observer()");
+
+        let rtp_observer_id = RtpObserverId::new();
+
+        let _buffer_guard = self
+            .inner
+            .channel
+            .buffer_messages_for(rtp_observer_id.into());
+
+        self.inner
+            .channel
+            .request(RouterCreateActiveSpeakerObserverRequest {
+                internal: RtpObserverInternal {
+                    router_id: self.inner.id,
+                    rtp_observer_id,
+                },
+                data: RouterCreateActiveSpeakerObserverData::from_options(
+                    &active_speaker_observer_options,
+                ),
+            })
+            .await?;
+
+        let active_speaker_observer = ActiveSpeakerObserver::new(
+            rtp_observer_id,
+            Arc::clone(&self.inner.executor),
+            self.inner.channel.clone(),
+            active_speaker_observer_options.app_data,
+            self.clone(),
+        );
+
+        self.inner.handlers.new_rtp_observer.call(|callback| {
+            callback(NewRtpObserver::ActiveSpeaker(&active_speaker_observer));
+        });
+
+        Ok(active_speaker_observer)
     }
 
     /// Pipes [`Producer`] with the given `producer_id` into another [`Router`] on same host.
